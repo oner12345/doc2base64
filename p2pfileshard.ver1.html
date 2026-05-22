@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OrbitDrop 星際傳送 - 極速安全 P2P 直連檔案傳輸</title>
+    <!-- Tailwind CSS Production CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts & Lucide Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&family=Noto+Sans+TC:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- React 18 & ReactDOM 18 CDN (Production Version) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel CDN to compile JSX in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Firebase 10.8.0 Compat SDK (最適合單檔案 CDN 部署，穩定度極高) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <style>
+        body {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        /* 自訂拉條樣式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #020617;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e1b4b;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4f46e5;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen relative overflow-x-hidden">
+
+    <!-- React 應用程式掛載點 -->
+    <div id="root"></div>
+
+    <!-- React + Firebase P2P 應用核心代碼 -->
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // ========================================================
+        // 1. Firebase 基礎配置與初始化 (相容本地測試與 Canvas 環境)
+        // ========================================================
+        
+        // 優先讀取系統注入之配置，若無則預設為開發佔位符 (使用者部屬時可直接在此替換為自己的 Config)
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "",
+            authDomain: "your-app.firebaseapp.com",
+            projectId: "your-app",
+            storageBucket: "your-app.appspot.com",
+            messagingSenderId: "",
+            appId: ""
+        };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'orbitdrop-prod';
+
+        // 初始化 Firebase Compat
+        const app = firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth(app);
+        const db = firebase.firestore(app);
+
+        // WebRTC 伺服器配置 (選用 Google 頂級免費 STUN)
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ]
+        };
+
+        const CHUNK_SIZE = 16384; // 16KB 傳輸分塊大小
+
+        // ========================================================
+        // 2. 隨機暱稱與輔助函式
+        // ========================================================
+        const ADJECTIVES = ['神秘的', '閃耀的', '極光的', '超速的', '復古的', '量子的', '流浪的', '飄浮的', '幸運的', '星際的'];
+        const NOUNS = ['宇航員', '星雲', '彗星', '黑洞', '光子', '脈衝星', '量子貓', '探路者', '小行星', '領航員'];
+        const EMOJIS = ['🪐', '🚀', '🛸', '👾', '🛰️', '☄️', '🌌', '🌟', '🤖', '🧑‍🚀'];
+
+        function generateNickname() {
+            const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+            const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+            return `${adj}${noun}`;
+        }
+
+        function getRandomEmoji() {
+            return EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+        }
+
+        function getDeviceType() {
+            const ua = navigator.userAgent;
+            if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) return 'tablet';
+            if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated/i.test(ua)) return 'mobile';
+            return 'desktop';
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // ========================================================
+        // 3. React 主要組件 App
+        // ========================================================
+        function App() {
+            const [user, setUser] = useState(null);
+            const [myPeerInfo, setMyPeerInfo] = useState({
+                id: '',
+                name: '',
+                emoji: '🧑‍🚀',
+                device: 'desktop',
+                roomId: 'lobby',
+                lastActive: Date.now()
+            });
+            
+            const [roomInput, setRoomInput] = useState('');
+            const [peers, setPeers] = useState([]);
+            const [activeConnections, setActiveConnections] = useState({});
+            
+            // 傳輸狀態
+            const [transfer, setTransfer] = useState({
+                isActive: false,
+                type: '', 
+                fileName: '',
+                fileSize: 0,
+                progress: 0,
+                speed: 0,
+                peerName: ''
+            });
+
+            // 自訂訊息通知
+            const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+            
+            const fileInputRef = useRef(null);
+            const selectedPeerIdRef = useRef(null);
+            const pendingFilesRef = useRef({});
+
+            // 接收緩衝
+            const receivedChunksRef = useRef([]);
+            const receivedSizeRef = useRef(0);
+            const incomingMetadataRef = useRef(null);
+            const transferStartTimeRef = useRef(0);
+
+            const showToast = (message, type = 'success') => {
+                setToast({ show: true, message, type });
+                setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
+            };
+
+            // 觸發 Lucide 圖示重新著色
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [peers, transfer.isActive, toast.show]);
+
+            // Auth 流程 (遵守 RULE 3)
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    } catch (err) {
+                        console.error("Auth init failed:", err);
+                        showToast("身份認證失敗，請重新載入網頁。", "error");
+                    }
+                };
+                initAuth();
+
+                const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+                    if (currentUser) {
+                        setUser(currentUser);
+                        setMyPeerInfo(prev => ({
+                            ...prev,
+                            id: currentUser.uid,
+                            name: generateNickname(),
+                            emoji: getRandomEmoji(),
+                            device: getDeviceType()
+                        }));
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // 在線節點管理與心跳機制 (遵守 RULE 1 & 2)
+            useEffect(() => {
+                if (!user || !myPeerInfo.id) return;
+
+                const myDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('peers').doc(myPeerInfo.id);
+                
+                const updateHeartbeat = async () => {
+                    try {
+                        await myDocRef.set({
+                            ...myPeerInfo,
+                            lastActive: Date.now()
+                        });
+                    } catch (err) {
+                        console.error("Heartbeat error:", err);
+                    }
+                };
+                updateHeartbeat();
+
+                const heartbeatInterval = setInterval(updateHeartbeat, 5000);
+
+                const peersCollectionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('peers');
+                const unsubscribePeers = peersCollectionRef.onSnapshot((snapshot) => {
+                    const list = [];
+                    const now = Date.now();
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        if (data.id !== myPeerInfo.id && data.roomId === myPeerInfo.roomId && (now - data.lastActive < 15000)) {
+                            list.push(data);
+                        }
+                    });
+                    setPeers(list);
+                }, (err) => {
+                    console.error("Listen peers failed:", err);
+                });
+
+                const handleUnload = () => {
+                    myDocRef.delete();
+                };
+                window.addEventListener('beforeunload', handleUnload);
+
+                return () => {
+                    clearInterval(heartbeatInterval);
+                    unsubscribePeers();
+                    window.removeEventListener('beforeunload', handleUnload);
+                    myDocRef.delete().catch(() => {});
+                };
+            }, [user, myPeerInfo.id, myPeerInfo.roomId, myPeerInfo.name]);
+
+            // WebRTC 信令通道監聽
+            useEffect(() => {
+                if (!user || !myPeerInfo.id) return;
+
+                const signalsCollectionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('signals');
+                
+                const unsubscribeSignals = signalsCollectionRef.onSnapshot((snapshot) => {
+                    snapshot.forEach(async (changeDoc) => {
+                        const sig = changeDoc.data();
+                        const docId = changeDoc.id;
+
+                        if (docId.endsWith(`_to_${myPeerInfo.id}`) && sig.roomId === myPeerInfo.roomId) {
+                            const senderId = sig.sender;
+
+                            if (sig.type === 'offer') {
+                                await handleIncomingOffer(senderId, sig.sdp, docId);
+                            } else if (sig.type === 'answer') {
+                                await handleIncomingAnswer(senderId, sig.sdp, docId);
+                            }
+                        }
+                    });
+                }, (err) => {
+                    console.error("Listen signals failed:", err);
+                });
+
+                return () => unsubscribeSignals();
+            }, [user, myPeerInfo.id, myPeerInfo.roomId, activeConnections]);
+
+            const waitForIceGathering = (pc) => {
+                return new Promise((resolve) => {
+                    if (pc.iceGatheringState === 'complete') {
+                        resolve();
+                    } else {
+                        const checkState = () => {
+                            if (pc.iceGatheringState === 'complete') {
+                                pc.removeEventListener('icegatheringstatechange', checkState);
+                                resolve();
+                            }
+                        };
+                        pc.addEventListener('icegatheringstatechange', checkState);
+                    }
+                });
+            };
+
+            const initiateConnection = async (targetPeerId) => {
+                if (activeConnections[targetPeerId]) {
+                    return activeConnections[targetPeerId];
+                }
+
+                const pc = new RTCPeerConnection(rtcConfig);
+                const channel = pc.createDataChannel('orbitDropTransfer', { ordered: true });
+                setupDataChannel(channel, targetPeerId);
+
+                pc.onconnectionstatechange = () => {
+                    handleConnectionStateChange(pc, targetPeerId);
+                };
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await waitForIceGathering(pc);
+
+                const signalDocId = `${myPeerInfo.id}_to_${targetPeerId}`;
+                const signalDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('signals').doc(signalDocId);
+                await signalDocRef.set({
+                    type: 'offer',
+                    sdp: pc.localDescription.sdp,
+                    sender: myPeerInfo.id,
+                    receiver: targetPeerId,
+                    roomId: myPeerInfo.roomId,
+                    timestamp: Date.now()
+                });
+
+                const newConn = { pc, channel };
+                setActiveConnections(prev => ({ ...prev, [targetPeerId]: newConn }));
+                return newConn;
+            };
+
+            const handleIncomingOffer = async (senderId, sdp, signalDocId) => {
+                if (activeConnections[senderId]) return;
+
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('signals').doc(signalDocId).delete();
+                } catch (e) {}
+
+                const pc = new RTCPeerConnection(rtcConfig);
+
+                pc.ondatachannel = (event) => {
+                    setupDataChannel(event.channel, senderId);
+                };
+
+                pc.onconnectionstatechange = () => {
+                    handleConnectionStateChange(pc, senderId);
+                };
+
+                await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                await waitForIceGathering(pc);
+
+                const answerDocId = `${myPeerInfo.id}_to_${senderId}`;
+                const answerDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('signals').doc(answerDocId);
+                await answerDocRef.set({
+                    type: 'answer',
+                    sdp: pc.localDescription.sdp,
+                    sender: myPeerInfo.id,
+                    receiver: senderId,
+                    roomId: myPeerInfo.roomId,
+                    timestamp: Date.now()
+                });
+
+                setActiveConnections(prev => ({ ...prev, [senderId]: { pc, channel: null } }));
+            };
+
+            const handleIncomingAnswer = async (senderId, sdp, signalDocId) => {
+                const conn = activeConnections[senderId];
+                if (!conn) return;
+
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('signals').doc(signalDocId).delete();
+                } catch (e) {}
+
+                await conn.pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
+            };
+
+            const handleConnectionStateChange = (pc, peerId) => {
+                if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                    closePeerConnection(peerId);
+                    showToast("與對端太空人的 P2P 直連已中斷", "error");
+                }
+            };
+
+            const closePeerConnection = (peerId) => {
+                const conn = activeConnections[peerId];
+                if (conn) {
+                    if (conn.channel) conn.channel.close();
+                    conn.pc.close();
+                    setActiveConnections(prev => {
+                        const copy = { ...prev };
+                        delete copy[peerId];
+                        return copy;
+                    });
+                }
+            };
+
+            const setupDataChannel = (channel, peerId) => {
+                channel.binaryType = 'arraybuffer';
+
+                channel.onopen = () => {
+                    const pendingFile = pendingFilesRef.current[peerId];
+                    if (pendingFile) {
+                        executeFileTransfer(pendingFile, channel, peerId);
+                        delete pendingFilesRef.current[peerId];
+                    }
+                };
+
+                channel.onclose = () => {
+                    setTransfer(prev => prev.isActive ? { ...prev, isActive: false } : prev);
+                };
+
+                channel.onmessage = (event) => {
+                    if (typeof event.data === 'string') {
+                        try {
+                            const msg = JSON.parse(event.data);
+                            
+                            if (msg.type === 'start') {
+                                receivedChunksRef.current = [];
+                                receivedSizeRef.current = 0;
+                                incomingMetadataRef.current = msg;
+                                transferStartTimeRef.current = Date.now();
+                                
+                                const sender = peers.find(p => p.id === peerId);
+                                const senderName = sender ? sender.name : "未知太空人";
+
+                                setTransfer({
+                                    isActive: true,
+                                    type: 'receive',
+                                    fileName: msg.name,
+                                    fileSize: msg.size,
+                                    progress: 0,
+                                    speed: 0,
+                                    peerName: senderName
+                                });
+                            } else if (msg.type === 'done') {
+                                const metadata = incomingMetadataRef.current;
+                                if (!metadata) return;
+
+                                const blob = new Blob(receivedChunksRef.current, { type: metadata.mime || 'application/octet-stream' });
+                                const url = URL.createObjectURL(blob);
+
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = metadata.name;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+
+                                showToast(`檔案 [${metadata.name}] 接收成功並存檔！`, "success");
+                                
+                                setTimeout(() => {
+                                    setTransfer({ isActive: false, type: '', fileName: '', fileSize: 0, progress: 0, speed: 0, peerName: '' });
+                                }, 1200);
+                            }
+                        } catch (e) {
+                            console.error("Parse command failed:", e);
+                        }
+                    } else {
+                        receivedChunksRef.current.push(event.data);
+                        receivedSizeRef.current += event.data.byteLength;
+
+                        const meta = incomingMetadataRef.current;
+                        if (meta) {
+                            const progress = receivedSizeRef.current / meta.size;
+                            const elapsed = (Date.now() - transferStartTimeRef.current) / 1000;
+                            const speed = elapsed > 0 ? (receivedSizeRef.current / elapsed) : 0;
+
+                            setTransfer(prev => ({
+                                ...prev,
+                                progress,
+                                speed
+                            }));
+                        }
+                    }
+                };
+            };
+
+            const handlePeerClick = (peerId) => {
+                selectedPeerIdRef.current = peerId;
+                fileInputRef.current.click();
+            };
+
+            const handleFileChange = async (event) => {
+                const file = event.target.files[0];
+                const targetId = selectedPeerIdRef.current;
+                if (!file || !targetId) return;
+
+                event.target.value = '';
+
+                const conn = activeConnections[targetId];
+                
+                if (conn && conn.channel && conn.channel.readyState === 'open') {
+                    executeFileTransfer(file, conn.channel, targetId);
+                } else {
+                    pendingFilesRef.current[targetId] = file;
+                    showToast("正在建立安全 P2P 隧道...", "info");
+                    await initiateConnection(targetId);
+                }
+            };
+
+            const executeFileTransfer = (file, channel, targetPeerId) => {
+                const targetPeer = peers.find(p => p.id === targetPeerId);
+                const targetName = targetPeer ? targetPeer.name : "未知太空人";
+
+                setTransfer({
+                    isActive: true,
+                    type: 'send',
+                    fileName: file.name,
+                    fileSize: file.size,
+                    progress: 0,
+                    speed: 0,
+                    peerName: targetName
+                });
+
+                channel.send(JSON.stringify({
+                    type: 'start',
+                    name: file.name,
+                    size: file.size,
+                    mime: file.type
+                }));
+
+                let offset = 0;
+                const startTime = Date.now();
+
+                const sendChunk = () => {
+                    if (channel.readyState !== 'open') {
+                        showToast("隧道異常中斷，傳輸失敗", "error");
+                        setTransfer(prev => ({ ...prev, isActive: false }));
+                        return;
+                    }
+
+                    // 背壓控制防止溢位崩潰
+                    if (channel.bufferedAmount > 1024 * 1024) {
+                        channel.onbufferedamountlow = () => {
+                            channel.onbufferedamountlow = null;
+                            sendChunk();
+                        };
+                        return;
+                    }
+
+                    const slice = file.slice(offset, offset + CHUNK_SIZE);
+                    const reader = new FileReader();
+                    
+                    reader.onload = (e) => {
+                        channel.send(e.target.result);
+                        offset += e.target.result.byteLength;
+
+                        const progress = offset / file.size;
+                        const elapsed = (Date.now() - startTime) / 1000;
+                        const speed = elapsed > 0 ? (offset / elapsed) : 0;
+
+                        setTransfer(prev => ({
+                            ...prev,
+                            progress,
+                            speed
+                        }));
+
+                        if (offset < file.size) {
+                            sendChunk();
+                        } else {
+                            channel.send(JSON.stringify({ type: 'done' }));
+                            showToast(`檔案 [${file.name}] 已成功發送！`, "success");
+                            setTimeout(() => {
+                                setTransfer({ isActive: false, type: '', fileName: '', fileSize: 0, progress: 0, speed: 0, peerName: '' });
+                            }, 1200);
+                        }
+                    };
+                    reader.readAsArrayBuffer(slice);
+                };
+
+                sendChunk();
+            };
+
+            const joinRoom = (e) => {
+                e.preventDefault();
+                const cleanRoom = roomInput.trim().toLowerCase();
+                if (!cleanRoom) return;
+
+                setMyPeerInfo(prev => ({
+                    ...prev,
+                    roomId: cleanRoom
+                }));
+                setRoomInput('');
+                showToast(`已躍遷至星域房間: ${cleanRoom}`, "success");
+            };
+
+            const resetToLobby = () => {
+                setMyPeerInfo(prev => ({
+                    ...prev,
+                    roomId: 'lobby'
+                }));
+                showToast("已返回主星域大廳", "info");
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col relative overflow-hidden">
+                    {/* 背景霓虹 */}
+                    <div className="absolute top-[-20%] left-[-20%] w-[60vw] h-[60vw] bg-violet-900/10 rounded-full blur-[150px] pointer-events-none"></div>
+                    <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] bg-amber-900/10 rounded-full blur-[130px] pointer-events-none"></div>
+
+                    {/* 頂部 Header */}
+                    <header className="border-b border-slate-900/60 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40 transition-all">
+                        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row gap-4 items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-violet-600 to-amber-500 flex items-center justify-center text-white font-black text-lg shadow-lg">
+                                    ☍
+                                </div>
+                                <div>
+                                    <span className="tracking-widest text-lg font-black bg-gradient-to-r from-slate-100 via-violet-200 to-amber-200 bg-clip-text text-transparent">OrbitDrop</span>
+                                    <span className="text-[9px] block text-slate-500 font-mono tracking-widest">P2P FILE ORBITER</span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <form onSubmit={joinRoom} className="flex bg-slate-900/90 border border-slate-800 rounded-xl p-1 w-full sm:w-auto">
+                                    <input 
+                                        type="text"
+                                        placeholder="自訂星域房間代碼..."
+                                        value={roomInput}
+                                        onChange={(e) => setRoomInput(e.target.value)}
+                                        className="bg-transparent text-xs px-3 py-2 outline-none w-full sm:w-44 placeholder-slate-600 focus:text-slate-100"
+                                    />
+                                    <button type="submit" className="bg-violet-600 hover:bg-violet-500 text-white text-xs px-3.5 py-2 rounded-lg font-bold transition-all whitespace-nowrap">
+                                        躍遷
+                                    </button>
+                                </form>
+                                {myPeerInfo.roomId !== 'lobby' && (
+                                    <button 
+                                        onClick={resetToLobby}
+                                        className="bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 p-2.5 rounded-xl transition-all"
+                                        title="回到大廳"
+                                    >
+                                        <i data-lucide="home" class="w-4 h-4"></i>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* 主雷達大廳 */}
+                    <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 md:py-12 flex flex-col items-center justify-center relative">
+                        <input 
+                            type="file" 
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            className="hidden"
+                        />
+
+                        {/* 雷達盤面 */}
+                        <div className="w-full max-w-2xl aspect-square sm:aspect-[4/3] rounded-3xl border border-slate-900/60 bg-slate-950/40 relative flex items-center justify-center overflow-hidden mb-12 shadow-2xl">
+                            
+                            {/* 雷達掃描特效 */}
+                            <div className="absolute inset-0 pointer-events-none z-0">
+                                <div className="absolute top-1/2 left-1/2 w-[150%] h-[150%] bg-[conic-gradient(from_0deg,rgba(124,58,237,0.06)_0deg,transparent_120deg)] origin-center -translate-x-1/2 -translate-y-1/2 animate-[spin_8s_linear_infinite]"></div>
+                                <div className="absolute top-1/2 left-1/2 w-[80%] h-[80%] border border-violet-950/20 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                                <div className="absolute top-1/2 left-1/2 w-[60%] h-[60%] border border-violet-950/30 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                                <div className="absolute top-1/2 left-1/2 w-[40%] h-[40%] border border-violet-950/40 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
+                            </div>
+
+                            {/* 中心點：自己 */}
+                            <div className="absolute z-10 flex flex-col items-center">
+                                <div className="relative">
+                                    <div className="w-20 h-20 rounded-full bg-slate-900 border-2 border-amber-500/80 flex items-center justify-center text-4xl shadow-xl shadow-amber-500/10">
+                                        {myPeerInfo.emoji}
+                                    </div>
+                                    <div className="absolute -inset-1.5 border border-amber-500/30 rounded-full animate-ping pointer-events-none"></div>
+                                </div>
+                                <span className="text-xs font-bold text-amber-400 mt-2.5 bg-slate-950/80 px-2 py-0.5 rounded-full border border-slate-900">
+                                    我：{myPeerInfo.name}
+                                </span>
+                                <span className="text-[10px] text-slate-500 font-mono tracking-wider uppercase mt-1">
+                                    {myPeerInfo.device === 'desktop' ? '🖥️ 電腦端' : myPeerInfo.device === 'tablet' ? '📟 平板端' : '📱 行動端'}
+                                </span>
+                            </div>
+
+                            {/* 周邊在線節點 */}
+                            {peers.length === 0 ? (
+                                <div className="absolute z-10 text-center max-w-xs px-6 py-4 rounded-2xl bg-slate-900/60 border border-slate-800/40 backdrop-blur">
+                                    <p className="text-xs text-slate-400 leading-relaxed font-light">
+                                        正在星野中巡航偵測...
+                                        <br /><br />
+                                        請在其他手機或電腦打開此網頁，並加入房間 <span className="text-amber-400 font-bold">[{myPeerInfo.roomId}]</span> 即可開始 P2P 閃傳！
+                                    </p>
+                                </div>
+                            ) : (
+                                peers.map((peer, idx) => {
+                                    const total = peers.length;
+                                    const angle = (idx * 2 * Math.PI) / total;
+                                    const distance = total === 1 ? 0.35 : idx % 2 === 0 ? 0.33 : 0.4;
+                                    
+                                    const left = 50 + distance * 100 * Math.cos(angle);
+                                    const top = 50 + distance * 100 * Math.sin(angle);
+                                    const isConnected = activeConnections[peer.id]?.channel?.readyState === 'open';
+
+                                    return (
+                                        <button
+                                            key={peer.id}
+                                            onClick={() => handlePeerClick(peer.id)}
+                                            style={{ left: `${left}%`, top: `${top}%` }}
+                                            className="absolute -translate-x-1/2 -translate-y-1/2 z-20 group focus:outline-none"
+                                        >
+                                            <div className="relative flex flex-col items-center">
+                                                <div className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-slate-950 flex items-center justify-center z-30 ${
+                                                    isConnected ? 'bg-emerald-500' : 'bg-slate-700'
+                                                }`}>
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                                                </div>
+
+                                                <div className="w-14 h-14 rounded-full bg-slate-900 border border-slate-800 group-hover:border-violet-500 group-hover:scale-110 flex items-center justify-center text-3xl shadow-lg transition-all duration-300">
+                                                    {peer.emoji}
+                                                </div>
+
+                                                <div className="mt-2 bg-slate-900/90 group-hover:bg-violet-950/90 border border-slate-800/60 px-2 py-1 rounded-xl shadow-md backdrop-blur-sm group-hover:border-violet-800 transition-all">
+                                                    <p className="text-[10px] font-bold text-slate-300 group-hover:text-white truncate max-w-[80px] text-center">
+                                                        {peer.name}
+                                                    </p>
+                                                    <p className="text-[9px] text-slate-500 group-hover:text-violet-300 text-center uppercase">
+                                                        {peer.device === 'desktop' ? 'PC' : peer.device === 'tablet' ? 'TAB' : 'PHONE'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* 下方狀態摘要 */}
+                        <div className="w-full max-w-xl bg-slate-900/40 border border-slate-900 rounded-2xl p-4 flex items-center justify-between backdrop-blur-md">
+                            <div className="flex items-center gap-3">
+                                <span className="text-2xl">🛰️</span>
+                                <div>
+                                    <p className="text-xs text-slate-400">當前定位星域</p>
+                                    <p className="text-sm font-black text-slate-100 flex items-center gap-2">
+                                        {myPeerInfo.roomId === 'lobby' ? '主星域大廳 (Lobby)' : `專屬星域: ${myPeerInfo.roomId}`}
+                                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs text-slate-500">在線鄰居</p>
+                                <p className="text-sm font-mono font-bold text-violet-400">{peers.length} 個太空艙</p>
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* 傳輸進行中彈窗 */}
+                    {transfer.isActive && (
+                        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-lg z-50 flex items-center justify-center p-4">
+                            <div className="w-full max-w-md bg-slate-900/90 border border-violet-500/20 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
+                                <div className="text-center space-y-6">
+                                    <div className="w-16 h-16 mx-auto rounded-2xl bg-violet-950/60 border border-violet-800/40 flex items-center justify-center text-3xl">
+                                        {transfer.type === 'send' ? '📤' : '📥'}
+                                    </div>
+
+                                    <div>
+                                        <span className="inline-block bg-violet-950 text-violet-300 border border-violet-900 px-3 py-1 rounded-full text-xs font-semibold mb-2 tracking-wide uppercase">
+                                            {transfer.type === 'send' ? '正在拋出星際檔案' : '正在接收星際檔案'}
+                                        </span>
+                                        <h3 className="text-base font-bold text-slate-100 line-clamp-2 px-4 mt-2">
+                                            {transfer.fileName}
+                                        </h3>
+                                        <p className="text-xs text-slate-400 mt-1">
+                                            大小：{formatBytes(transfer.fileSize)} ｜ 對象：{transfer.peerName}
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-900 p-0.5">
+                                            <div 
+                                                className="h-full bg-gradient-to-r from-violet-600 via-indigo-500 to-amber-500 rounded-full transition-all duration-150"
+                                                style={{ width: `${transfer.progress * 100}%` }}
+                                            ></div>
+                                        </div>
+                                        <div className="flex justify-between text-xs font-mono text-slate-500">
+                                            <span>{Math.round(transfer.progress * 100)} %</span>
+                                            <span>{formatBytes(transfer.speed)} / 秒</span>
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        onClick={() => {
+                                            const peerObj = peers.find(p => p.name === transfer.peerName);
+                                            if (peerObj) closePeerConnection(peerObj.id);
+                                            setTransfer({ isActive: false, type: '', fileName: '', fileSize: 0, progress: 0, speed: 0, peerName: '' });
+                                            showToast("檔案傳輸已取消", "info");
+                                        }}
+                                        className="w-full bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:text-red-400 text-slate-400 py-3 rounded-xl text-xs font-semibold tracking-widest transition-all"
+                                    >
+                                        中斷軌道連線
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Toast 通知 */}
+                    <div className={`fixed bottom-6 right-6 z-50 transform transition-all duration-300 ${
+                        toast.show ? 'translate-y-0 opacity-100' : 'translate-y-12 opacity-0 pointer-events-none'
+                    }`}>
+                        <div className={`px-5 py-3.5 rounded-2xl border flex items-center gap-3 shadow-2xl backdrop-blur ${
+                            toast.type === 'error' ? 'bg-red-950/95 border-red-900/40 text-red-200' : 
+                            toast.type === 'info' ? 'bg-blue-950/95 border-blue-900/40 text-blue-200' : 
+                            'bg-slate-900/95 border-violet-900/40 text-slate-200'
+                        }`}>
+                            <span className="text-base">
+                                {toast.type === 'error' ? '🚨' : toast.type === 'info' ? '🛰️' : '✨'}
+                            </span>
+                            <span className="text-xs md:text-sm font-semibold">{toast.message}</span>
+                        </div>
+                    </div>
+
+                    {/* 頁尾 */}
+                    <footer className="border-t border-slate-900/60 bg-slate-950 py-6 text-center text-[10px] text-slate-600 space-y-1">
+                        <p className="font-mono tracking-widest uppercase">ORBITDROP P2P FILE ORBITER © 2026</p>
+                        <p>純前端安全直連 ・ 檔案不經任何第三方伺服器 ・ 點對點加密加密封鎖傳輸</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        // 渲染 React 應用
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
