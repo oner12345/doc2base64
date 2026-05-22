@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Base64 & Data URI 線上即時轉換器</title>
+    <!-- 引入 Tailwind CSS 提供現代化響應式 UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自訂捲軸樣式，提升整體視覺質感 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+
+    <!-- 主容器 -->
+    <div class="flex-grow container mx-auto px-4 py-8 max-w-7xl">
+        
+        <!-- 頁首標題區 -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                Base64 & Data URI 轉換器
+            </h1>
+            <p class="mt-2 text-slate-400 text-sm md:text-base">
+                將任何文件、圖片或程式碼快速轉換為 <code class="text-indigo-300 bg-slate-900 px-1.5 py-0.5 rounded">data:[MIME類型];base64,...</code> 格式
+            </p>
+        </header>
+
+        <!-- 主工作區：響應式雙欄佈局 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <!-- 左欄：輸入與設定控端 (佔 5 欄) -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <!-- 檔案上傳與拖曳區 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        1. 選擇或拖入檔案
+                    </h2>
+                    
+                    <div id="drop-zone" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 active:border-indigo-600 bg-slate-950/50 rounded-xl p-8 text-center cursor-pointer transition-all duration-300 group relative">
+                        <input type="file" id="file-input" class="hidden" />
+                        <div class="space-y-4">
+                            <!-- 拖曳區圖示 -->
+                            <div class="mx-auto w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                <svg class="w-8 h-8 text-slate-400 group-hover:text-indigo-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-slate-200">
+                                    拖曳檔案到此處，或 <span class="text-indigo-400 group-hover:underline">瀏覽電腦</span>
+                                </p>
+                                <p class="text-xs text-slate-500 mt-1">支援任何文字、圖片、SVG、PDF、音訊等檔案</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 已選擇檔案資訊面板 (預設隱藏) -->
+                    <div id="file-info-panel" class="hidden mt-4 p-4 bg-slate-950 rounded-xl border border-slate-800/80 animate-fadeIn">
+                        <div class="flex items-start justify-between">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs text-slate-400 font-semibold uppercase tracking-wider">已載入檔案</p>
+                                <p id="info-name" class="text-sm font-medium text-indigo-300 truncate mt-1">filename.txt</p>
+                                <div class="flex gap-4 mt-2 text-xs text-slate-400">
+                                    <span>大小: <strong id="info-size" class="text-slate-200">0 KB</strong></span>
+                                    <span>原始 MIME: <strong id="info-type" class="text-slate-200">text/plain</strong></span>
+                                </div>
+                            </div>
+                            <button id="btn-clear" class="text-slate-400 hover:text-red-400 p-1 rounded-lg hover:bg-slate-900 transition-colors" title="清除檔案">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 格式設定面版 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                        2. 格式與協定設定
+                    </h2>
+
+                    <div class="space-y-4">
+                        <!-- MIME Type 選擇器 -->
+                        <div>
+                            <label for="mime-select" class="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">輸出 MIME 類型 (資料格式)</label>
+                            <select id="mime-select" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer">
+                                <option value="auto">自動偵測 (推薦)</option>
+                                <option value="text/plain">text/plain (純文字)</option>
+                                <option value="text/html">text/html (HTML 網頁)</option>
+                                <option value="text/css">text/css (CSS 樣式表)</option>
+                                <option value="text/javascript">text/javascript (JS 腳本)</option>
+                                <option value="application/json">application/json (JSON 資料)</option>
+                                <option value="image/svg+xml">image/svg+xml (SVG 向量圖)</option>
+                                <option value="image/png">image/png (PNG 圖片)</option>
+                                <option value="image/jpeg">image/jpeg (JPEG 圖片)</option>
+                                <option value="custom">-- 自定義 MIME Type --</option>
+                            </select>
+                        </div>
+
+                        <!-- 自訂 MIME Type 輸入框 (當選擇自定義時顯示) -->
+                        <div id="custom-mime-container" class="hidden animate-fadeIn">
+                            <label for="custom-mime-input" class="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">輸入自訂 MIME 類型</label>
+                            <input type="text" id="custom-mime-input" placeholder="例如: application/pdf" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all" />
+                        </div>
+
+                        <!-- 字符集設定 -->
+                        <div>
+                            <label for="charset-select" class="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">字符編碼設定 (選填)</label>
+                            <select id="charset-select" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer">
+                                <option value="">無 (不宣告 charset)</option>
+                                <option value="utf-8" selected>utf-8 (預設最常用)</option>
+                                <option value="ascii">ascii</option>
+                                <option value="big5">big5 (繁體中文舊格式)</option>
+                            </select>
+                            <p class="text-slate-500 text-xs mt-1">主要用於 text/* 相關格式，避免解碼時中文字產生亂碼。</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 右欄：輸出結果與預覽 (佔 7 欄) -->
+            <div class="lg:col-span-7 space-y-6">
+                
+                <!-- 轉換結果輸出面板 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col h-full min-h-[500px]">
+                    
+                    <!-- 分頁標籤列 -->
+                    <div class="flex border-b border-slate-800 pb-3 mb-4 overflow-x-auto gap-2">
+                        <button id="tab-datauri" class="px-4 py-2 text-sm font-semibold rounded-lg text-indigo-400 bg-indigo-950/50 border border-indigo-900/50 whitespace-nowrap transition-all duration-200">
+                            Data URI 完整網址
+                        </button>
+                        <button id="tab-base64" class="px-4 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 whitespace-nowrap transition-all duration-200">
+                            純 Base64 字串
+                        </button>
+                        <button id="tab-templates" class="px-4 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 whitespace-nowrap transition-all duration-200">
+                            應用程式碼範本
+                        </button>
+                        <button id="tab-preview" class="px-4 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 whitespace-nowrap transition-all duration-200">
+                            即時效果預覽
+                        </button>
+                    </div>
+
+                    <!-- 內文展示區 -->
+                    <div class="flex-grow flex flex-col min-h-0">
+                        
+                        <!-- 狀態提示：未上傳檔案 -->
+                        <div id="output-placeholder" class="flex-grow flex flex-col items-center justify-center text-center p-8 text-slate-500">
+                            <svg class="w-16 h-16 text-slate-700 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            <p class="text-sm font-medium">尚未載入任何文件</p>
+                            <p class="text-xs mt-1">請於左側拖入或選取檔案以自動進行即時編碼</p>
+                        </div>
+
+                        <!-- 狀態提示：有檔案但正在處理 (隱藏) -->
+                        <div id="output-loading" class="hidden flex-grow flex flex-col items-center justify-center text-center p-8">
+                            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-3"></div>
+                            <p class="text-sm text-slate-400">正在進行 Base64 高速轉碼中...</p>
+                        </div>
+
+                        <!-- 實際結果容器 (載入檔案後顯示) -->
+                        <div id="output-content" class="hidden flex-grow flex flex-col space-y-4">
+                            
+                            <!-- 分頁一：Data URI 完整網址 -->
+                            <div id="panel-datauri" class="flex-grow flex flex-col space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">完整 Data URI 格式碼</span>
+                                    <span id="char-count-datauri" class="text-xs text-slate-500">共 0 字元</span>
+                                </div>
+                                <textarea id="textarea-datauri" readonly class="flex-grow w-full h-64 bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-indigo-200/90 focus:outline-none resize-none focus:border-slate-700"></textarea>
+                                <div class="flex flex-wrap gap-2 pt-2">
+                                    <button onclick="copyContent('textarea-datauri')" class="flex-1 min-w-[120px] bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 px-4 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 active:scale-95 duration-150">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                                        複製完整 Data URI
+                                    </button>
+                                    <button id="btn-download-uri" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium py-2.5 px-4 rounded-xl text-sm transition-colors flex items-center justify-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                        下載文字檔
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 分頁二：純 Base64 字串 -->
+                            <div id="panel-base64" class="hidden flex-grow flex flex-col space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-xs font-semibold text-emerald-400 uppercase tracking-wider">原始 Base64 編碼數據 (不含前綴標頭)</span>
+                                    <span id="char-count-base64" class="text-xs text-slate-500">共 0 字元</span>
+                                </div>
+                                <textarea id="textarea-base64" readonly class="flex-grow w-full h-64 bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-emerald-200/90 focus:outline-none resize-none focus:border-slate-700"></textarea>
+                                <div class="flex flex-wrap gap-2 pt-2">
+                                    <button onclick="copyContent('textarea-base64')" class="flex-1 min-w-[120px] bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 px-4 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 duration-150">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                                        複製純 Base64
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 分頁三：應用程式碼範本 -->
+                            <div id="panel-templates" class="hidden flex-grow flex flex-col space-y-4 overflow-y-auto max-h-[450px] pr-1">
+                                
+                                <!-- 網頁圖片標籤 <img> -->
+                                <div class="space-y-1">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-xs font-medium text-slate-400">HTML 圖片渲染 (適用於圖片格式)</span>
+                                        <button onclick="copyContent('temp-img')" class="text-xs text-indigo-400 hover:underline">複製</button>
+                                    </div>
+                                    <textarea id="temp-img" readonly class="w-full h-16 bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-xs text-slate-300 focus:outline-none resize-none" wrap="off"></textarea>
+                                </div>
+
+                                <!-- 網頁超連結 <a> (直接下載) -->
+                                <div class="space-y-1">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-xs font-medium text-slate-400">HTML 直接下載連結 &lt;a href="..." download&gt;</span>
+                                        <button onclick="copyContent('temp-link')" class="text-xs text-indigo-400 hover:underline">複製</button>
+                                    </div>
+                                    <textarea id="temp-link" readonly class="w-full h-16 bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-xs text-slate-300 focus:outline-none resize-none" wrap="off"></textarea>
+                                </div>
+
+                                <!-- CSS 背景背景圖 background-image -->
+                                <div class="space-y-1">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-xs font-medium text-slate-400">CSS 背景圖片 background-image</span>
+                                        <button onclick="copyContent('temp-css')" class="text-xs text-indigo-400 hover:underline">複製</button>
+                                    </div>
+                                    <textarea id="temp-css" readonly class="w-full h-16 bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-xs text-slate-300 focus:outline-none resize-none" wrap="off"></textarea>
+                                </div>
+                            </div>
+
+                            <!-- 分頁四：即時效果預覽 -->
+                            <div id="panel-preview" class="hidden flex-grow flex flex-col space-y-2">
+                                <span class="text-xs font-semibold text-purple-400 uppercase tracking-wider">即時解碼渲染結果</span>
+                                
+                                <!-- 預覽容器 -->
+                                <div class="flex-grow w-full h-72 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden relative flex items-center justify-center p-4">
+                                    <!-- 圖片預覽 -->
+                                    <img id="preview-image" src="" class="hidden max-w-full max-h-full object-contain drop-shadow-lg" alt="圖片預覽" />
+                                    
+                                    <!-- HTML / Text 預覽 (透過 Iframe 防止樣式污染) -->
+                                    <iframe id="preview-frame" class="hidden w-full h-full bg-white rounded-lg" sandbox="allow-scripts"></iframe>
+
+                                    <!-- 其他不支援直接預覽的格式顯示 -->
+                                    <div id="preview-unsupported" class="hidden text-center text-slate-500">
+                                        <svg class="w-12 h-12 mx-auto mb-2 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                                        <p class="text-sm">此 MIME 類型不支援直接在網頁預覽</p>
+                                        <p class="text-xs mt-1">您可以點擊「Data URI」分頁下的下載或複製，並在對應環境中使用</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- 自訂 Toast 提示通知元件 -->
+    <div id="toast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 bg-slate-800 border border-slate-700 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 pointer-events-none z-50">
+        <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping"></span>
+        <span id="toast-text" class="text-sm font-medium">複製成功！</span>
+    </div>
+
+    <!-- 頁尾 -->
+    <footer class="bg-slate-950 border-t border-slate-900 py-6 text-center text-xs text-slate-600">
+        <p>© 2026 Base64 & Data URI Tool. 完全在瀏覽器本機安全運行，不會上傳任何檔案至後端伺服器。</p>
+    </footer>
+
+    <!-- 應用程式邏輯 Javascript -->
+    <script>
+        // 取得 DOM 節點
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileInfoPanel = document.getElementById('file-info-panel');
+        const infoName = document.getElementById('info-name');
+        const infoSize = document.getElementById('info-size');
+        const infoType = document.getElementById('info-type');
+        const btnClear = document.getElementById('btn-clear');
+        
+        const mimeSelect = document.getElementById('mime-select');
+        const customMimeContainer = document.getElementById('custom-mime-container');
+        const customMimeInput = document.getElementById('custom-mime-input');
+        const charsetSelect = document.getElementById('charset-select');
+
+        const outputPlaceholder = document.getElementById('output-placeholder');
+        const outputLoading = document.getElementById('output-loading');
+        const outputContent = document.getElementById('output-content');
+
+        const textareaDatauri = document.getElementById('textarea-datauri');
+        const textareaBase64 = document.getElementById('textarea-base64');
+        const charCountDatauri = document.getElementById('char-count-datauri');
+        const charCountBase64 = document.getElementById('char-count-base64');
+        const btnDownloadUri = document.getElementById('btn-download-uri');
+
+        // 範本展示框
+        const tempImg = document.getElementById('temp-img');
+        const tempLink = document.getElementById('temp-link');
+        const tempCss = document.getElementById('temp-css');
+
+        // 預覽元素
+        const previewImage = document.getElementById('preview-image');
+        const previewFrame = document.getElementById('preview-frame');
+        const previewUnsupported = document.getElementById('preview-unsupported');
+
+        // 全域變數存儲當前檔案資訊
+        let fileBase64Data = ''; // 不含 head 資訊的純 base64
+        let uploadedFileName = '';
+        let uploadedFileSize = 0;
+        let detectedMime = '';
+
+        // ==========================================
+        // 1. 檔案讀取與事件監聽
+        // ==========================================
+
+        // 點選拖曳區觸發檔案選取
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        // 檔案輸入變更事件
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // 拖曳事件處理
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-indigo-500', 'bg-indigo-950/20');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-indigo-500', 'bg-indigo-950/20');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        // 清除檔案按鈕
+        btnClear.addEventListener('click', (e) => {
+            e.stopPropagation(); // 阻止氣泡傳播，防觸發 dropZone 點擊
+            resetAll();
+        });
+
+        // 格式與字元集設定異動時即時更新
+        mimeSelect.addEventListener('change', () => {
+            if (mimeSelect.value === 'custom') {
+                customMimeContainer.classList.remove('hidden');
+            } else {
+                customMimeContainer.classList.add('hidden');
+            }
+            updateOutputs();
+        });
+
+        customMimeInput.addEventListener('input', updateOutputs);
+        charsetSelect.addEventListener('change', updateOutputs);
+
+        // ==========================================
+        // 2. 核心檔案處理邏輯
+        // ==========================================
+        function handleFile(file) {
+            uploadedFileName = file.name;
+            uploadedFileSize = file.size;
+            // 處理偵測不到 MIME 的狀況
+            detectedMime = file.type || 'application/octet-stream';
+
+            // 顯示載入中狀態
+            outputPlaceholder.classList.add('hidden');
+            outputContent.classList.add('hidden');
+            outputLoading.classList.remove('hidden');
+
+            const reader = new FileReader();
+            
+            // 使用 readAsDataURL 可以直接抓取瀏覽器組好的 Data URI 再做處理
+            reader.onload = function(e) {
+                const fullResult = e.target.result;
+                const commaIndex = fullResult.indexOf(',');
+                
+                if (commaIndex !== -1) {
+                    fileBase64Data = fullResult.substring(commaIndex + 1);
+                } else {
+                    fileBase64Data = '';
+                }
+
+                // 更新左側的檔案資訊面板
+                infoName.textContent = uploadedFileName;
+                infoSize.textContent = formatBytes(uploadedFileSize);
+                infoType.textContent = detectedMime;
+                fileInfoPanel.classList.remove('hidden');
+
+                // 觸發重新渲染輸出
+                updateOutputs();
+
+                // 切換回主介面
+                outputLoading.classList.add('hidden');
+                outputContent.classList.remove('hidden');
+            };
+
+            reader.onerror = function() {
+                showToast("讀取檔案時發生錯誤！");
+                resetAll();
+            };
+
+            reader.readAsDataURL(file);
+        }
+
+        // 格式化位元組大小
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // 重設網頁狀態到初始值
+        function resetAll() {
+            fileInput.value = '';
+            fileBase64Data = '';
+            uploadedFileName = '';
+            uploadedFileSize = 0;
+            detectedMime = '';
+
+            fileInfoPanel.classList.add('hidden');
+            outputContent.classList.add('hidden');
+            outputLoading.classList.add('hidden');
+            outputPlaceholder.classList.remove('hidden');
+
+            textareaDatauri.value = '';
+            textareaBase64.value = '';
+            charCountDatauri.textContent = '共 0 字元';
+            charCountBase64.textContent = '共 0 字元';
+
+            // 清除預覽內容
+            previewImage.src = '';
+            previewImage.classList.add('hidden');
+            previewFrame.src = '';
+            previewFrame.classList.add('hidden');
+            previewUnsupported.classList.add('hidden');
+        }
+
+        // ==========================================
+        // 3. 輸出生成與預覽邏輯
+        // ==========================================
+        function updateOutputs() {
+            if (!fileBase64Data) return;
+
+            // 確定要採用的 MIME Type
+            let selectedMime = '';
+            if (mimeSelect.value === 'auto') {
+                selectedMime = detectedMime;
+            } else if (mimeSelect.value === 'custom') {
+                selectedMime = customMimeInput.value.trim() || 'application/octet-stream';
+            } else {
+                selectedMime = mimeSelect.value;
+            }
+
+            // 確定是否帶有 charset 參數
+            const charset = charsetSelect.value;
+            const charsetStr = charset ? `;charset=${charset}` : '';
+
+            // 組合成完整的 Data URI
+            // 語法: data:[<mediatype>][;charset=<character set>][;base64],<data>
+            const finalDataUri = `data:${selectedMime}${charsetStr};base64,${fileBase64Data}`;
+
+            // 1. 更新 Data URI 分頁
+            textareaDatauri.value = finalDataUri;
+            charCountDatauri.textContent = `共 ${finalDataUri.length.toLocaleString()} 字元`;
+
+            // 2. 更新純 Base64 分頁
+            textareaBase64.value = fileBase64Data;
+            charCountBase64.textContent = `共 ${fileBase64Data.length.toLocaleString()} 字元`;
+
+            // 3. 更新程式碼範本
+            tempImg.value = `<img src="${finalDataUri}" alt="${uploadedFileName || 'image'}" />`;
+            tempLink.value = `<a href="${finalDataUri}" download="${uploadedFileName || 'download'}">下載檔案</a>`;
+            tempCss.value = `.element {\n  background-image: url("${finalDataUri}");\n}`;
+
+            // 4. 設定下載純文字 URI 按鈕
+            btnDownloadUri.onclick = function() {
+                const blob = new Blob([finalDataUri], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = (uploadedFileName ? uploadedFileName.split('.')[0] : 'datauri') + '_base64.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast("已下載文字檔案！");
+            };
+
+            // 5. 更新即時效果預覽
+            updatePreview(finalDataUri, selectedMime);
+        }
+
+        // 依據 MIME 類型處理即時預覽
+        function updatePreview(dataUri, mimeType) {
+            // 先隱藏所有預覽面板
+            previewImage.classList.add('hidden');
+            previewFrame.classList.add('hidden');
+            previewUnsupported.classList.add('hidden');
+
+            // 判斷類型進行對應解碼預覽
+            if (mimeType.startsWith('image/') && mimeType !== 'image/svg+xml') {
+                // 圖片檔案直接使用 <img>
+                previewImage.src = dataUri;
+                previewImage.classList.remove('hidden');
+            } else if (mimeType === 'image/svg+xml' || mimeType === 'text/html' || mimeType === 'text/plain' || mimeType === 'application/json' || mimeType.startsWith('text/')) {
+                // 網頁、SVG 或文字格式等可以透過 iframe 渲染
+                previewFrame.classList.remove('hidden');
+                
+                if (mimeType === 'text/plain' || mimeType === 'application/json') {
+                    // 如果是純文字或 JSON，為了美觀將其包裹在 pre 中呈現
+                    const plainText = atob(fileBase64Data);
+                    // 進行簡單的 HTML 跳脫防止注入破壞預覽
+                    const escapedText = plainText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    const iframeContent = `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <style>
+                                body { font-family: monospace; padding: 20px; background-color: #f8fafc; color: #0f172a; font-size: 13px; line-height: 1.5; margin: 0; white-space: pre-wrap; word-break: break-all; }
+                            </style>
+                        </head>
+                        <body><pre>${escapedText}</pre></body>
+                        </html>
+                    `;
+                    previewFrame.srcdoc = iframeContent;
+                } else {
+                    // SVG 或 HTML 則直接以 Data URI 作為 src 或以 srcdoc 嵌入
+                    previewFrame.src = dataUri;
+                }
+            } else {
+                // 不支援直接預覽的格式 (例如 PDF、ZIP、音訊、二進位文件)
+                previewUnsupported.classList.remove('hidden');
+            }
+        }
+
+        // ==========================================
+        // 4. UI 互動細節：分頁切換與複製功能
+        // ==========================================
+        const tabDatauri = document.getElementById('tab-datauri');
+        const tabBase64 = document.getElementById('tab-base64');
+        const tabTemplates = document.getElementById('tab-templates');
+        const tabPreview = document.getElementById('tab-preview');
+
+        const panelDatauri = document.getElementById('panel-datauri');
+        const panelBase64 = document.getElementById('panel-base64');
+        const panelTemplates = document.getElementById('panel-templates');
+        const panelPreview = document.getElementById('panel-preview');
+
+        const tabs = [
+            { btn: tabDatauri, panel: panelDatauri },
+            { btn: tabBase64, panel: panelBase64 },
+            { btn: tabTemplates, panel: panelTemplates },
+            { btn: tabPreview, panel: panelPreview }
+        ];
+
+        tabs.forEach(tab => {
+            tab.btn.addEventListener('click', () => {
+                // 重設所有分頁標籤樣式
+                tabs.forEach(t => {
+                    t.btn.className = "px-4 py-2 text-sm font-medium rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 whitespace-nowrap transition-all duration-200";
+                    t.panel.classList.add('hidden');
+                });
+                // 設定當前選中標籤樣式
+                tab.btn.className = "px-4 py-2 text-sm font-semibold rounded-lg text-indigo-400 bg-indigo-950/50 border border-indigo-900/50 whitespace-nowrap transition-all duration-200";
+                tab.panel.classList.remove('hidden');
+            });
+        });
+
+        // 複製至剪貼簿功能 (使用不依賴 navigator.clipboard 的傳統兼容模式，適合 iframe 環境)
+        function copyContent(textareaId) {
+            const textarea = document.getElementById(textareaId);
+            if (!textarea || !textarea.value) return;
+
+            textarea.select();
+            textarea.setSelectionRange(0, 99999); // 支援行動端選擇範圍
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showToast('複製成功！代碼已儲存至剪貼簿');
+                } else {
+                    showToast('複製失敗，請手動全選複製');
+                }
+            } catch (err) {
+                showToast('複製出錯，請手動複製');
+            }
+        }
+
+        // 自訂 Toast 快顯訊息
+        let toastTimeout = null;
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            const toastText = document.getElementById('toast-text');
+            
+            toastText.textContent = message;
+            
+            // 清除之前的計時器
+            if (toastTimeout) clearTimeout(toastTimeout);
+            
+            // 顯示動畫
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            // 3秒後自動隱藏
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

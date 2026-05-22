@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Base64 檔案轉換工具</title>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #0f172a;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            position: relative;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            text-align: center;
+            color: var(--text);
+        }
+
+        p.subtitle {
+            color: var(--text-light);
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 0.95rem;
+        }
+
+        /* Canvas 背景容器 */
+        .drop-zone-wrapper {
+            position: relative;
+            width: 100%;
+            height: 220px;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 24px;
+            border: 2px dashed #cbd5e1;
+            transition: border-color 0.3s;
+        }
+
+        .drop-zone-wrapper.dragover {
+            border-color: var(--primary);
+        }
+
+        #canvas-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none; /* 讓滑鼠事件穿透給上傳區 */
+        }
+
+        /* 實際的拖放區域 */
+        .drop-zone {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.85);
+            transition: background 0.3s;
+        }
+
+        .drop-zone:hover {
+            background: rgba(255, 255, 255, 0.75);
+        }
+
+        .drop-zone icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            color: var(--primary);
+        }
+
+        .drop-text {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .file-info {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            margin-top: 8px;
+            display: none;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        /* 結果顯示區 */
+        .result-section {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .result-title {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .btn-copy {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-copy:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-copy.copied {
+            background-color: #10b981;
+        }
+
+        textarea {
+            width: 100%;
+            height: 180px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background-color: #f8fafc;
+            color: #334155;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            resize: vertical;
+        }
+
+        /* RWD 響應式調整 */
+        @media (max-width: 640px) {
+            .container {
+                padding: 20px;
+            }
+            h1 {
+                font-size: 1.5rem;
+            }
+            .drop-zone-wrapper {
+                height: 180px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Base64 檔案轉換器</h1>
+        <p class="subtitle">支援任何檔案，自動識別格式並輸出為 data:text/...;base64</p>
+
+        <div class="drop-zone-wrapper" id="drop-wrapper">
+            <!-- Canvas 科技感動態背景 -->
+            <canvas id="canvas-bg"></canvas>
+            
+            <!-- 拖放與點擊區域 -->
+            <div class="drop-zone" id="drop-zone">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <div class="drop-text">將檔案拖放到此處，或點擊上傳</div>
+                <div class="file-info" id="file-info"></div>
+            </div>
+            <input type="file" id="file-input">
+        </div>
+
+        <!-- 轉換結果輸出 -->
+        <div class="result-section" id="result-section">
+            <div class="result-header">
+                <span class="result-title">Base64 輸出結果：</span>
+                <button class="btn-copy" id="btn-copy">複製全部程式碼</button>
+            </div>
+            <textarea id="output-text" readonly placeholder="轉換後的程式碼將顯示在此處..."></textarea>
+        </div>
+    </div>
+
+    <script>
+        // --- 元素宣告 ---
+        const dropWrapper = document.getElementById('drop-wrapper');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileInfo = document.getElementById('file-info');
+        const resultSection = document.getElementById('result-section');
+        const outputText = document.getElementById('output-text');
+        const btnCopy = document.getElementById('btn-copy');
+        const canvas = document.getElementById('canvas-bg');
+        const ctx = canvas.getContext('2d');
+
+        // --- 1. Canvas RWD 動態背景程式碼 ---
+        let particles = [];
+        function resizeCanvas() {
+            canvas.width = dropWrapper.clientWidth;
+            canvas.height = dropWrapper.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.size = Math.random() * 2 + 1;
+                this.speedX = Math.random() * 0.6 - 0.3;
+                this.speedY = Math.random() * 0.6 - 0.3;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                if (this.x < 0 || this.x > canvas.width) this.speedX *= -1;
+                if (this.y < 0 || this.y > canvas.height) this.speedY *= -1;
+            }
+            draw() {
+                ctx.fillStyle = 'rgba(79, 70, 229, 0.15)';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < 30; i++) {
+                particles.push(new Particle());
+            }
+        }
+        initParticles();
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // --- 2. 檔案處理核心邏輯 ---
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropWrapper.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropWrapper.classList.add('dragover');
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropWrapper.addEventListener(eventName, () => {
+                dropWrapper.classList.remove('dragover');
+            });
+        });
+
+        dropWrapper.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const files = e.dataTransfer.files;
+            if (files.length > 0) handleFile(files[0]);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) handleFile(e.target.files[0]);
+        });
+
+        function handleFile(file) {
+            // 顯示檔案資訊
+            fileInfo.innerText = `已選擇：${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            fileInfo.style.display = 'block';
+
+            const reader = new FileReader();
+            
+            // 讀取為 Data URL (格式即為 data:[mime/type];base64,......)
+            reader.readAsDataURL(file);
+            
+            reader.onload = function () {
+                let base64Result = reader.result;
+
+                /* 
+                  【核心邏輯】
+                  如果瀏覽器無法正確辨識某些特殊文字或自訂格式的 MIME Type，
+                  常常會預設為 data:application/octet-stream;base64。
+                  這裡做一個視覺優化，如果遇到未知的純文字，可以手動修正它的 Header。
+                */
+                if (file.type.startsWith('text/') && base64Result.includes('application/octet-stream')) {
+                    base64Result = base64Result.replace('application/octet-stream', file.type);
+                }
+
+                outputText.value = base64Result;
+                resultSection.style.display = 'block';
+                
+                // 滾動到結果區域
+                resultSection.scrollIntoView({ behavior: 'smooth' });
+            };
+
+            reader.onerror = function () {
+                alert('檔案讀取失敗！');
+            };
+        }
+
+        // --- 3. 一鍵複製功能 ---
+        btnCopy.addEventListener('click', () => {
+            outputText.select();
+            document.execCommand('copy');
+            
+            btnCopy.innerText = '已複製！';
+            btnCopy.classList.add('copied');
+            
+            setTimeout(() => {
+                btnCopy.innerText = '複製全部程式碼';
+                btnCopy.classList.remove('copied');
+            }, 2000);
+        });
+    </script>
+</body>
+</html>
